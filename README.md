@@ -487,27 +487,4 @@ Open `http://localhost:5173` in your browser to access StudyPal!
 
 ---
 
-## 16. Future Roadmap
-
-- [ ] **Google Calendar / Apple Calendar Sync**: 2-way live calendar export via `.ics` and OAuth2.
-- [ ] **Flashcard & Active Recall Deck Generator**: Auto-generate Anki-compatible flashcard decks directly from syllabus topics.
-- [ ] **AI Study Group / Peer Accountability**: Multiplayer study rooms with shared focus timers and leaderboard streaks.
-- [ ] **Syllabus PDF / Lecture Slide OCR**: Upload professor lecture notes or syllabus PDFs for instant automated task breakdown.
-
----
-
-## 17. Author & Brainheaters Preselection Submission Note
-
-This project was engineered specifically for the **Brainheaters AI Study Planner** preselection assessment.
-
-- **Developer**: Antigravity AI & Engineering Pair Team
-- **Submission Date**: September 2026
-- **Architecture Highlights**:
-  - Pixel-perfect visual fidelity matching reference specifications
-  - Full-stack TypeScript architecture (Node.js + Express + React + Vite + MongoDB)
-  - Real Google Gemini Flash AI integration with modular prompt engineering
-  - 100% test pass rate across backend integration and AI service test suites
-
----
-
 *Built with ❤️ for students who want to study smarter, retain more, and eliminate exam stress.*
