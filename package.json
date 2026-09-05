@@ -2,15 +2,24 @@
   "name": "studypal",
   "version": "1.0.0",
   "description": "Brainheaters AI Study Planner (StudyPal)",
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:client": "cd client && npm run dev",
-    "dev:server": "cd server && npm run dev",
-    "build": "cd client && npm run build && cd ../server && npm run build",
-    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
-    "start": "cd server && npm run start"
+    "dev:client": "npm run --workspace=client dev",
+    "dev:server": "npm run --workspace=server dev",
+    "build": "npm run --workspace=client build && npm run --workspace=server build",
+    "build:client": "npm run --workspace=client build",
+    "build:server": "npm run --workspace=server build",
+    "vercel-build": "npm run --workspace=client build",
+    "install:all": "npm install",
+    "start": "node server/dist/server.js"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3",
+    "vite": "^8.2.2"
   }
 }

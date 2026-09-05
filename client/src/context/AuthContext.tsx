@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { api } from '../services/api';
 
 export interface User {
   id: string;
@@ -32,21 +33,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
-        const res = await fetch('http://localhost:5000/api/auth/me', {
-          headers: { Authorization: `Bearer ${storedToken}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await api.auth.getMe();
+        if (data.success && data.user) {
           setUser(data.user);
           setToken(storedToken);
         } else {
-          // Token expired or invalid
           localStorage.removeItem('studypal_token');
           setUser(null);
           setToken(null);
         }
       } catch (err) {
         console.error('Failed to verify user session:', err);
+        localStorage.removeItem('studypal_token');
+        setUser(null);
+        setToken(null);
       } finally {
         setIsLoading(false);
       }

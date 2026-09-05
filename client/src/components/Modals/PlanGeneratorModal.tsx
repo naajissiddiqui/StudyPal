@@ -23,8 +23,12 @@ export const PlanGeneratorModal: React.FC<PlanGeneratorModalProps> = ({ isOpen, 
     setLoading(true);
 
     try {
+      const baseUrl = import.meta.env.VITE_API_URL 
+        ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`)
+        : (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
+
       // Call backend API
-      const res = await fetch('http://localhost:5000/api/generate-plan', {
+      const res = await fetch(`${baseUrl}/generate-plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
