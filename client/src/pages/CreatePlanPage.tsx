@@ -6,13 +6,13 @@ import {
   ArrowLeft,
   Plus,
   Trash2,
-  CheckCircle2,
-  Loader2
+  CheckCircle2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { AppNavbar } from '../components/AppNavbar';
+import { Spinner } from '../components/ui/Spinner';
 
 interface TopicData {
   name: string;
@@ -609,21 +609,21 @@ export const CreatePlanPage: React.FC = () => {
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px',
+                          gap: '7px',
                           background: 'linear-gradient(135deg, #5448F8 0%, #7C3AED 100%)',
                           color: '#FFFFFF',
                           border: 'none',
-                          padding: '6px 14px',
+                          padding: '7px 16px',
                           borderRadius: '8px',
                           fontSize: '12.5px',
                           fontWeight: 600,
                           cursor: loadingAiTopics[idx] ? 'not-allowed' : 'pointer',
-                          opacity: loadingAiTopics[idx] ? 0.7 : 1,
+                          opacity: loadingAiTopics[idx] ? 0.75 : 1,
                           boxShadow: '0 2px 8px rgba(84, 72, 248, 0.2)'
                         }}
                       >
-                        {loadingAiTopics[idx] ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                        <span>{loadingAiTopics[idx] ? 'Generating Syllabus with Gemini...' : '✨ Suggest Topics with AI'}</span>
+                        {loadingAiTopics[idx] ? <Spinner size="xs" color="#FFFFFF" /> : <Sparkles size={13} />}
+                        <span>{loadingAiTopics[idx] ? 'Generating Syllabus...' : '✨ Suggest Topics with AI'}</span>
                       </button>
                     </div>
                   </div>
@@ -668,15 +668,15 @@ export const CreatePlanPage: React.FC = () => {
                             background: 'linear-gradient(135deg, #5448F8 0%, #7C3AED 100%)',
                             color: '#FFFFFF',
                             border: 'none',
-                            padding: '5px 12px',
+                            padding: '6px 14px',
                             borderRadius: '8px',
                             fontSize: '12px',
                             fontWeight: 600,
                             cursor: loadingAiTopics[sIdx] ? 'not-allowed' : 'pointer',
-                            opacity: loadingAiTopics[sIdx] ? 0.7 : 1
+                            opacity: loadingAiTopics[sIdx] ? 0.75 : 1
                           }}
                         >
-                          {loadingAiTopics[sIdx] ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                          {loadingAiTopics[sIdx] ? <Spinner size="xs" color="#FFFFFF" /> : <Sparkles size={12} />}
                           <span>{loadingAiTopics[sIdx] ? 'Synthesizing...' : 'Auto-Generate with AI'}</span>
                         </button>
                         <span style={{ fontSize: '12px', color: '#64748B' }}>
@@ -934,19 +934,22 @@ export const CreatePlanPage: React.FC = () => {
                 marginBottom: '24px',
                 boxShadow: '0 0 30px rgba(84, 72, 248, 0.3)'
               }}>
-                <Loader2 size={36} className="animate-spin" />
+                <Spinner size="xl" color="#5448F8" />
               </div>
 
-              <h2 style={{ fontSize: '24px', fontWeight: 850, color: '#0F172A', marginBottom: '12px' }}>
-                Generating Your AI Study Plan...
+              <h2 style={{ fontSize: '24px', fontWeight: 850, color: '#0F172A', marginBottom: '8px' }}>
+                Creating Your Study Plan
               </h2>
+              <p style={{ fontSize: '14.5px', color: '#64748B', marginBottom: '24px' }}>
+                StudyPal AI is crafting your personalized, adaptive schedule
+              </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '440px', textAlign: 'left', width: '100%', marginTop: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '440px', textAlign: 'left', width: '100%' }}>
                 {[
-                  'Understanding your syllabus and topics...',
-                  'Prioritizing high-weightage & weak areas...',
-                  'Balancing study blocks against your daily availability...',
-                  'Building your personalized adaptive study timetable...'
+                  'Analyzing your subjects and topics...',
+                  'Prioritizing upcoming exams and weak areas...',
+                  'Balancing your available study hours...',
+                  'Building your adaptive study sessions...'
                 ].map((msg, idx) => {
                   const isDone = generationStage > idx;
                   const isCurrent = generationStage === idx;
@@ -954,21 +957,25 @@ export const CreatePlanPage: React.FC = () => {
                     <div key={idx} style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
+                      gap: '12px',
                       fontSize: '14px',
                       color: isDone ? '#059669' : isCurrent ? '#5448F8' : '#94A3B8',
-                      fontWeight: isCurrent ? 700 : 500
+                      fontWeight: isCurrent ? 700 : 500,
+                      padding: '8px 12px',
+                      borderRadius: '10px',
+                      background: isCurrent ? '#F5F3FF' : isDone ? '#F0FDF4' : 'transparent',
+                      transition: 'all 0.3s ease'
                     }}>
                       {isDone ? (
                         <CheckCircle2 size={18} color="#059669" />
+                      ) : isCurrent ? (
+                        <Spinner size="xs" color="#5448F8" />
                       ) : (
                         <div style={{
                           width: '18px',
                           height: '18px',
                           borderRadius: '50%',
-                          border: isCurrent ? '2px solid #5448F8' : '2px solid #CBD5E1',
-                          borderTopColor: isCurrent ? 'transparent' : '#CBD5E1',
-                          animation: isCurrent ? 'spin 1s linear infinite' : 'none'
+                          border: '2px solid #CBD5E1'
                         }} />
                       )}
                       <span>{msg}</span>

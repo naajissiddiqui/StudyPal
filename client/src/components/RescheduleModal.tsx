@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, RotateCw, Loader2 } from 'lucide-react';
+import { X, RotateCw } from 'lucide-react';
 import type { TaskItem } from './TaskCard';
+import { Spinner } from './ui/Spinner';
 
 interface RescheduleModalProps {
   task: TaskItem | null;
@@ -224,7 +225,7 @@ export const RescheduleModal: React.FC<RescheduleModalProps> = ({
             >
               {loading ? (
                 <>
-                  <Loader2 size={16} className="animate-spin" />
+                  <Spinner size="sm" color="#FFFFFF" />
                   <span>Rescheduling...</span>
                 </>
               ) : (

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, Clock, BookOpen, CheckCircle2, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Clock, BookOpen, CheckCircle2, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import type { TaskItem } from './TaskCard';
 import { formatTime12h } from '../utils/timeUtils';
 import { api } from '../services/api';
+import { Spinner } from './ui/Spinner';
 
 interface TaskDetailModalProps {
   task: TaskItem | null;
@@ -141,7 +142,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 }}
               >
                 {loadingBreakdown ? (
-                  <Loader2 size={13} className="animate-spin" />
+                  <Spinner size="xs" color="#5448F8" />
                 ) : (
                   <>
                     <span>{showBreakdown ? 'Hide Step Breakdown' : '✨ AI Action Plan'}</span>
@@ -222,7 +223,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               >
                 {loading ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
+                    <Spinner size="sm" color="#FFFFFF" />
                     <span>Saving...</span>
                   </>
                 ) : (

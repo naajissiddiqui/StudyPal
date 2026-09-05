@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { User, Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { Spinner } from '../components/ui/Spinner';
 
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
@@ -178,7 +179,7 @@ export const RegisterPage: React.FC = () => {
           >
             {loading ? (
               <>
-                <Loader2 size={18} className="animate-spin" />
+                <Spinner size="sm" color="#FFFFFF" />
                 <span>Creating Account...</span>
               </>
             ) : (

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { Spinner } from '../components/ui/Spinner';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -166,7 +167,7 @@ export const LoginPage: React.FC = () => {
           >
             {loading ? (
               <>
-                <Loader2 size={18} className="animate-spin" />
+                <Spinner size="sm" color="#FFFFFF" />
                 <span>Signing In...</span>
               </>
             ) : (

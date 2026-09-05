@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Sparkles, Bot, User as UserIcon, Loader2, Lightbulb, RotateCcw } from 'lucide-react';
+import { X, Send, Sparkles, Bot, User as UserIcon, Lightbulb, RotateCcw } from 'lucide-react';
 import { api } from '../services/api';
+import { Spinner } from './ui/Spinner';
+import { MarkdownRenderer } from './ui/MarkdownRenderer';
 
 interface Message {
   id: string;
@@ -27,7 +29,7 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
     {
       id: 'welcome',
       sender: 'assistant',
-      text: "👋 Hi! I'm your **StudyPal AI Coach**, powered by Google Gemini.\n\nI have full context on your subjects, upcoming exams, and today's schedule. Ask me anything about exam strategies, memory retention, or how to tackle difficult topics!",
+      text: "👋 Hi! I'm your **StudyPal AI Coach**.\n\nI have full context on your subjects, upcoming exams, and today's schedule. Ask me anything about study strategies, memory retention, or how to tackle difficult topics!",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -76,7 +78,7 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
       const errorMessage: Message = {
         id: 'err-' + Date.now(),
         sender: 'assistant',
-        text: `⚠️ **Error**: ${err.message || 'Unable to connect to StudyPal AI. Please try again.'}`,
+        text: `⚠️ **Notice**: ${err.message || 'Unable to connect to StudyPal AI. Please try again.'}`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -140,7 +142,7 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0 }}>Ask StudyPal AI</h3>
+                <h3 style={{ fontSize: '17px', fontWeight: 800, margin: 0 }}>StudyPal AI Coach</h3>
                 <span
                   style={{
                     fontSize: '11px',
@@ -153,7 +155,7 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
                     gap: '4px'
                   }}
                 >
-                  <Sparkles size={11} color="#A7F3D0" /> Gemini
+                  <Sparkles size={11} color="#A7F3D0" /> Active Assistant
                 </span>
               </div>
               <p style={{ fontSize: '12px', color: '#CBD5E1', margin: 0, marginTop: '2px' }}>
@@ -282,7 +284,7 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
                   lineHeight: 1.6
                 }}
               >
-                <div style={{ whiteSpace: 'pre-line' }}>{msg.text}</div>
+                <MarkdownRenderer content={msg.text} />
                 <div
                   style={{
                     fontSize: '10.5px',
@@ -322,14 +324,14 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
                   border: '1px solid #E2E8F0',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '10px',
                   color: '#5448F8',
                   fontSize: '13.5px',
                   fontWeight: 600
                 }}
               >
-                <Loader2 size={16} className="animate-spin" />
-                <span>StudyPal AI is thinking...</span>
+                <Spinner size="sm" color="#5448F8" />
+                <span>StudyPal is thinking...</span>
               </div>
             </div>
           )}
@@ -386,8 +388,17 @@ export const AskStudyPalModal: React.FC<AskStudyPalModalProps> = ({ isOpen, onCl
                 boxShadow: '0 4px 14px rgba(84, 72, 248, 0.3)'
               }}
             >
-              <span>Send</span>
-              <Send size={16} />
+              {loading ? (
+                <>
+                  <Spinner size="sm" color="#FFFFFF" />
+                  <span>Sending...</span>
+                </>
+              ) : (
+                <>
+                  <span>Send</span>
+                  <Send size={16} />
+                </>
+              )}
             </button>
           </form>
         </div>

@@ -16,6 +16,7 @@ import type { TaskItem } from '../components/TaskCard';
 import { RescheduleModal } from '../components/RescheduleModal';
 import { TaskDetailModal } from '../components/TaskDetailModal';
 import { formatTime12h, getStartOfWeek, addDays, formatDateShort } from '../utils/timeUtils';
+import { Spinner } from '../components/ui/Spinner';
 
 export const WeeklyPlanPage: React.FC = () => {
   // Current Monday of the viewed week
@@ -326,8 +327,8 @@ export const WeeklyPlanPage: React.FC = () => {
 
         {/* 7-Day Timetable Grid */}
         {loading ? (
-          <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748B' }}>
-            <div style={{ display: 'inline-block', width: '36px', height: '36px', border: '3px solid #EEF0FF', borderTopColor: '#5448F8', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+          <div style={{ padding: '80px 20px', textAlign: 'center', color: '#64748B', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Spinner size="lg" color="#5448F8" />
             <p style={{ marginTop: '16px', fontSize: '14px', fontWeight: 500 }}>Organizing your weekly curriculum...</p>
           </div>
         ) : error ? (

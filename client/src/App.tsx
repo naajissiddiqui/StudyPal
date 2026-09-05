@@ -8,6 +8,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { CreatePlanPage } from './pages/CreatePlanPage';
 import { WeeklyPlanPage } from './pages/WeeklyPlanPage';
 
+import { Spinner } from './components/ui/Spinner';
+
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useAuth();
@@ -21,17 +23,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
         justifyContent: 'center',
         background: '#F7F8FE'
       }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '4px solid #EEF0FF', 
-            borderTopColor: '#5448F8', 
-            borderRadius: '50%', 
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 16px' 
-          }} />
-          <p style={{ color: '#64748B', fontSize: '14px', fontWeight: 600 }}>Loading StudyPal...</p>
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Spinner size="lg" color="#5448F8" />
+          <p style={{ color: '#64748B', fontSize: '14px', fontWeight: 600, marginTop: '16px' }}>Loading StudyPal...</p>
         </div>
       </div>
     );

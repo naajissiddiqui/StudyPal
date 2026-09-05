@@ -825,11 +825,50 @@ button, a {
   color: #64748B;
 }
 
-.modal-close-btn:hover {
-  background: #E2E8F0;
-  color: #0F172A;
-}
-
 .modal-body {
   padding: 30px;
 }
+
+/* ==========================================================================
+   Universal Guaranteed Loading Animations
+   ========================================================================== */
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes studypal-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+}
+
+.animate-spin {
+  animation: studypal-spin 0.8s linear infinite !important;
+  display: inline-block;
+  transform-origin: center center;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite !important;
+}
+

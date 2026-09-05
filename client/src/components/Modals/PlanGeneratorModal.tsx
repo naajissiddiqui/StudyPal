@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, Sparkles, Clock, ArrowRight, Loader2 } from 'lucide-react';
+import { X, Sparkles, Clock, ArrowRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { Spinner } from '../ui/Spinner';
 
 interface PlanGeneratorModalProps {
   isOpen: boolean;
@@ -200,7 +201,7 @@ export const PlanGeneratorModal: React.FC<PlanGeneratorModalProps> = ({ isOpen, 
               >
                 {loading ? (
                   <>
-                    <Loader2 size={18} className="animate-spin" />
+                    <Spinner size="sm" color="#FFFFFF" />
                     <span>AI Engine Generating Optimal Plan...</span>
                   </>
                 ) : (
