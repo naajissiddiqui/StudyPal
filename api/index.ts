@@ -1,36 +1,37 @@
 import type { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import dns from 'dns';
 import { createApp } from '../server/src/app';
-
-try {
-  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
-} catch (e) {
-  // Ignore in restricted environments
-}
+import { connectToDatabase, sanitizeDbError } from '../server/src/config/database';
 
 let cachedApp: any = null;
 
-async function getApp() {
-  if (cachedApp) return cachedApp;
-
-  const mongoUri = process.env.MONGODB_URI;
-  if (mongoUri && mongoose.connection.readyState === 0) {
-    try {
-      await mongoose.connect(mongoUri, {
-        serverSelectionTimeoutMS: 8000
-      });
-      console.log('[Vercel Serverless] MongoDB connected successfully');
-    } catch (err) {
-      console.error('[Vercel Serverless] MongoDB connection error:', err);
-    }
+function getApp() {
+  if (!cachedApp) {
+    cachedApp = createApp();
   }
-
-  cachedApp = createApp();
   return cachedApp;
 }
 
 export default async function handler(req: Request, res: Response) {
-  const app = await getApp();
+  const app = getApp();
+
+  const isHealthCheck = req.url === '/api/health' || req.url === '/health' || req.url?.startsWith('/api/health?');
+
+  try {
+    // Ensure MongoDB connection is active before executing any route database operations
+    await connectToDatabase();
+  } catch (error) {
+    // If health check route, allow Express to respond with health status
+    if (isHealthCheck) {
+      return app(req, res);
+    }
+
+    const safeMessage = sanitizeDbError(error);
+    return res.status(500).json({
+      success: false,
+      error: 'Database connection error',
+      message: safeMessage
+    });
+  }
+
   return app(req, res);
 }

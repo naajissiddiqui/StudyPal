@@ -10,9 +10,30 @@ import { errorHandler } from './middleware/error.middleware';
 export function createApp(): Express {
   const app = express();
 
+  const allowedOrigins = [
+    env.CLIENT_URL,
+    'https://studypal-xi.vercel.app',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://localhost:5000'
+  ].filter(Boolean);
+
   // Middleware
   app.use(cors({
-    origin: [env.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, same-origin/serverless internal)
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true
   }));
   app.use(express.json());

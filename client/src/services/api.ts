@@ -1,6 +1,23 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL
-  ? (import.meta.env.VITE_API_URL.endsWith('/api') ? import.meta.env.VITE_API_URL : `${import.meta.env.VITE_API_URL}/api`)
-  : (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
+function getApiBaseUrl(): string {
+  const envUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
+  
+  if (import.meta.env.PROD) {
+    // In production, default to same-origin '/api' and ignore any localhost URLs
+    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+      return '/api';
+    }
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/+$/, '')}/api`;
+  }
+
+  // In local development, use envUrl if explicitly provided, otherwise default to '/api' (proxied by Vite)
+  if (envUrl) {
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl.replace(/\/+$/, '')}/api`;
+  }
+
+  return '/api';
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 function getHeaders(isJson = true): HeadersInit {
   const headers: Record<string, string> = {};
