@@ -1,5 +1,3 @@
-import { PDFParse } from 'pdf-parse';
-
 export interface ExtractedPDFResult {
   text: string;
   pageCount: number;
@@ -8,6 +6,30 @@ export interface ExtractedPDFResult {
 }
 
 export class PDFService {
+  /**
+   * Lazily loads the PDF parser function only when needed.
+   * Avoids top-level imports and serverless module initialization crashes.
+   */
+  private async loadPdfParser(): Promise<(buffer: Buffer, options?: any) => Promise<any>> {
+    try {
+      // Direct require to lib/pdf-parse avoids index.js module.parent side-effects
+      // and eliminates any need for canvas/DOMMatrix native addons.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pdfParser = require('pdf-parse/lib/pdf-parse.js');
+      if (typeof pdfParser === 'function') {
+        return pdfParser;
+      }
+      if (pdfParser && typeof pdfParser.default === 'function') {
+        return pdfParser.default;
+      }
+      return pdfParser;
+    } catch {
+      // Fallback to standard dynamic import if require is unavailable
+      const imported: any = await import('pdf-parse');
+      return imported.default || imported;
+    }
+  }
+
   /**
    * Validates and extracts text from a PDF Buffer.
    * Ensures non-empty extractable text and handles corrupted or scanned PDFs gracefully.
@@ -32,21 +54,11 @@ export class PDFService {
     let parsedInfo: any;
 
     try {
-      // PDFParse v2 class usage
-      const parser = new PDFParse({ data: buffer });
-      const parsedData = await parser.getText();
+      const parsePdf = await this.loadPdfParser();
+      const parsedData = await parsePdf(buffer);
       parsedText = parsedData?.text || '';
-      pageCount = parsedData?.total || 1;
-      try {
-        parsedInfo = await parser.getInfo();
-      } catch {
-        // info extraction is optional
-      }
-      try {
-        await parser.destroy();
-      } catch {
-        // cleanup
-      }
+      pageCount = parsedData?.numpages || 1;
+      parsedInfo = parsedData?.info || undefined;
     } catch (parseErr: any) {
       console.error('[PDFService] Error parsing PDF buffer:', parseErr?.message || parseErr);
       const err: any = new Error('Failed to read and parse the PDF document. The file may be password protected or corrupted.');
@@ -90,3 +102,4 @@ export class PDFService {
 }
 
 export const pdfService = new PDFService();
+
