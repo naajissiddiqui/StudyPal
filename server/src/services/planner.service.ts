@@ -27,12 +27,35 @@ export interface CreatePlanInput {
   preferredStudyEnd: string;   // e.g. "21:00"
   sessionLength?: number;      // minutes, default 60
   breakDuration?: number;      // minutes, default 15
+  syllabus?: {
+    fileName: string;
+    uploadedAt?: Date | string;
+    rawTextLength?: number;
+    subjects?: Array<{
+      name: string;
+      overview?: string;
+      units: Array<{
+        name: string;
+        topics: Array<{
+          name: string;
+          subtopics?: string[];
+          keyConcepts?: string[];
+        }>;
+      }>;
+    }>;
+  };
   subjects: {
     name: string;
     examDate: string;
     difficulty: 'EASY' | 'MEDIUM' | 'HARD';
     confidence: 'WEAK' | 'AVERAGE' | 'STRONG';
-    topics: { name: string; status?: 'WEAK' | 'AVERAGE' | 'STRONG' | 'COMPLETED' }[];
+    topics: {
+      name: string;
+      status?: 'WEAK' | 'AVERAGE' | 'STRONG' | 'COMPLETED';
+      unitName?: string;
+      subtopics?: string[];
+      keyConcepts?: string[];
+    }[];
   }[];
 }
 
@@ -75,11 +98,17 @@ export class PlannerService {
     const rankedSubjects = input.subjects.map(s => {
       const priorityScore = this.calculateSubjectPriority(s, startDateStr);
       return {
-        ...s,
+        name: s.name,
+        examDate: s.examDate,
+        difficulty: s.difficulty,
+        confidence: s.confidence,
         priorityScore,
         topics: (s.topics || []).map(t => ({
           name: t.name,
-          status: t.status || 'AVERAGE'
+          status: t.status || 'AVERAGE',
+          unitName: t.unitName,
+          subtopics: t.subtopics || [],
+          keyConcepts: t.keyConcepts || []
         }))
       };
     }).sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0));
@@ -99,7 +128,13 @@ export class PlannerService {
       sessionLength: input.sessionLength || 60,
       breakDuration: input.breakDuration || 15,
       status: 'ACTIVE',
-      subjects: rankedSubjects
+      subjects: rankedSubjects,
+      syllabus: input.syllabus ? {
+        fileName: input.syllabus.fileName,
+        uploadedAt: input.syllabus.uploadedAt ? new Date(input.syllabus.uploadedAt) : new Date(),
+        rawTextLength: input.syllabus.rawTextLength,
+        subjects: input.syllabus.subjects || []
+      } : undefined
     });
 
     // 3. Generate daily task schedule
@@ -115,6 +150,9 @@ export class PlannerService {
       priorityScore: number;
       topicName: string;
       topicStatus: string;
+      unitName?: string;
+      subtopics?: string[];
+      keyConcepts?: string[];
     }
 
     const topicPool: TopicItem[] = [];
@@ -127,7 +165,10 @@ export class PlannerService {
           confidence: sub.confidence,
           priorityScore: sub.priorityScore || 1,
           topicName: top.name,
-          topicStatus: top.status || 'AVERAGE'
+          topicStatus: top.status || 'AVERAGE',
+          unitName: top.unitName,
+          subtopics: top.subtopics,
+          keyConcepts: top.keyConcepts
         });
       }
     }
@@ -192,11 +233,16 @@ export class PlannerService {
 
         const taskDetails = await aiService.generateTaskDetails({
           subjectName: selectedTopic.subjectName,
-          topic: selectedTopic.topicName,
+          topic: selectedTopic.unitName ? `${selectedTopic.unitName} - ${selectedTopic.topicName}` : selectedTopic.topicName,
           type: taskType,
           difficulty: selectedTopic.difficulty,
           confidence: selectedTopic.confidence
         });
+
+        let finalDescription = taskDetails.description;
+        if (selectedTopic.subtopics && selectedTopic.subtopics.length > 0) {
+          finalDescription += ` Key syllabus subtopics: ${selectedTopic.subtopics.slice(0, 3).join(', ')}.`;
+        }
 
         generatedTasksToInsert.push({
           planId: plan._id,
@@ -208,7 +254,7 @@ export class PlannerService {
           endTime: slot.endTime,
           duration: slot.duration,
           title: taskDetails.title,
-          description: taskDetails.description,
+          description: finalDescription,
           type: taskType,
           status: 'PENDING',
           priority: priorityLevel,

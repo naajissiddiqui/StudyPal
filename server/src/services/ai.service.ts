@@ -11,10 +11,56 @@ import {
   RescheduleContext,
   buildAdaptiveReschedulePrompt,
   AssistantContext,
-  buildStudyAssistantSystemPrompt
+  buildStudyAssistantSystemPrompt,
+  buildSyllabusParsingSystemPrompt,
+  buildSyllabusParsingUserPrompt
 } from '../prompts';
 
 // Zod validation schemas for structured AI responses
+export const SubtopicStringSchema = z
+  .string()
+  .trim()
+  .min(1, 'Subtopic name cannot be empty')
+  .refine(
+    (val) => {
+      const lower = val.toLowerCase().trim();
+      // Reject count or summary patterns like "10 subtopics", "5 topics", "multiple subtopics", "several subtopics", etc.
+      const isCount = /^\d+\s*(sub-?topics?|topics?|chapters?|units?|items?|concepts?)$/i.test(lower);
+      const isSummary = /^(multiple|several|various|many|few|all|some|no)\s*(sub-?topics?|topics?|chapters?|items?|concepts?)$/i.test(lower);
+      const isExplicitCount = /^\d+\s+subtopics?$/i.test(lower);
+      return !isCount && !isSummary && !isExplicitCount;
+    },
+    {
+      message: 'Subtopic must be an actual syllabus concept name, not a count or summary string (e.g. "10 subtopics", "5 topics", "multiple subtopics")'
+    }
+  );
+
+export const AISyllabusSubjectSchema = z.object({
+  name: z.string().min(1, 'Subject name is required'),
+  overview: z.string().optional(),
+  units: z.array(
+    z.object({
+      name: z.string().min(1, 'Unit or module name is required'),
+      topics: z.array(
+        z.object({
+          name: z.string().min(1, 'Topic name is required'),
+          subtopics: z.array(SubtopicStringSchema).default([]),
+          keyConcepts: z.array(z.string()).default([])
+        })
+      ).min(1, 'At least 1 topic is required per unit')
+    })
+  ).min(1, 'At least 1 unit or module is required per subject')
+});
+
+export const AISyllabusResponseSchema = z.object({
+  institution: z.string().optional(),
+  program: z.string().optional(),
+  subjects: z.array(AISyllabusSubjectSchema).min(1, 'At least 1 subject must be extracted from the syllabus')
+});
+
+export type AISyllabusResponse = z.infer<typeof AISyllabusResponseSchema>;
+export type AISyllabusSubject = z.infer<typeof AISyllabusSubjectSchema>;
+
 const AITaskSchema = z.object({
   date: z.string(),
   startTime: z.string(),
@@ -80,14 +126,17 @@ const AIRescheduleAdviceSchema = z.object({
 
 export class AIService {
   private ai: GoogleGenAI | null = null;
-  private primaryModel = 'gemini-3.6-flash';
-  private fallbackModel = 'gemini-2.0-flash';
+  private primaryModel: string;
+  private fallbackModel: string;
 
   constructor() {
+    this.primaryModel = env.GEMINI_MODEL || 'gemini-3.6-flash';
+    this.fallbackModel = env.GEMINI_FALLBACK_MODEL || 'gemini-flash-latest';
+
     if (env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim() !== '') {
       try {
         this.ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
-        console.log('[AIService] Google GenAI initialized successfully with Gemini API key');
+        console.log(`[AIService] Google GenAI initialized successfully (Primary: ${this.primaryModel}, Fallback: ${this.fallbackModel})`);
       } catch (err) {
         console.warn('[AIService] Failed to instantiate GoogleGenAI client:', err);
       }
@@ -116,7 +165,7 @@ export class AIService {
   /**
    * Helper timeout wrapper to guarantee responsiveness under high load or network latency
    */
-  private async generateWithTimeout(promise: Promise<any>, ms: number = 7000): Promise<any> {
+  private async generateWithTimeout(promise: Promise<any>, ms: number = 25000): Promise<any> {
     let timer: any;
     const timeoutPromise = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`Gemini API request timed out after ${ms}ms`)), ms);
@@ -129,45 +178,193 @@ export class AIService {
   }
 
   /**
+   * Evaluates whether an error from Google GenAI is transient (503, 429, 500, timeout, overloaded)
+   */
+  public isTransientError(err: any): boolean {
+    if (!err) return false;
+    const status = err.status || err.statusCode || err.response?.status;
+    if (status === 503 || status === 429 || status === 500 || status === 502 || status === 504) {
+      return true;
+    }
+
+    const msg = (err.message || '').toLowerCase();
+    return (
+      msg.includes('503') ||
+      msg.includes('unavailable') ||
+      msg.includes('high demand') ||
+      msg.includes('spikes in demand') ||
+      msg.includes('overloaded') ||
+      msg.includes('429') ||
+      msg.includes('resource_exhausted') ||
+      msg.includes('rate limit') ||
+      msg.includes('quota') ||
+      msg.includes('timed out') ||
+      msg.includes('timeout') ||
+      msg.includes('econnreset') ||
+      msg.includes('fetch failed') ||
+      msg.includes('temporarily')
+    );
+  }
+
+  /**
+   * Evaluates whether an error is permanent and should NOT be retried (400, 401, 403, 404, 422)
+   */
+  public isPermanentError(err: any): boolean {
+    if (!err) return false;
+    const status = err.status || err.statusCode || err.response?.status;
+    if (status === 400 || status === 401 || status === 403 || status === 404 || status === 422) {
+      return true;
+    }
+
+    const msg = (err.message || '').toLowerCase();
+    return (
+      msg.includes('400') ||
+      msg.includes('invalid_argument') ||
+      msg.includes('401') ||
+      msg.includes('unauthenticated') ||
+      msg.includes('403') ||
+      msg.includes('permission_denied') ||
+      msg.includes('404') ||
+      msg.includes('not_found') ||
+      msg.includes('is not found for api version')
+    );
+  }
+
+  /**
+   * Converts raw API errors into clean, user-friendly errors without exposing raw JSON/secrets
+   */
+  public sanitizeUserFacingError(err: any): Error {
+    const msg = (err?.message || '').toLowerCase();
+    const status = err?.status || err?.statusCode || 500;
+
+    if (status === 503 || msg.includes('503') || msg.includes('high demand') || msg.includes('unavailable') || msg.includes('overloaded')) {
+      const sanitized: any = new Error('The AI service is temporarily experiencing high demand. Please try processing the syllabus again in a few moments.');
+      sanitized.statusCode = 503;
+      sanitized.code = 'AI_SERVICE_HIGH_DEMAND';
+      return sanitized;
+    }
+
+    if (status === 429 || msg.includes('429') || msg.includes('quota') || msg.includes('rate limit')) {
+      const sanitized: any = new Error('The AI service rate limit was reached. Please wait a moment and try processing again.');
+      sanitized.statusCode = 429;
+      sanitized.code = 'AI_RATE_LIMIT_EXCEEDED';
+      return sanitized;
+    }
+
+    if (msg.includes('timed out') || msg.includes('timeout')) {
+      const sanitized: any = new Error('The AI request timed out while analyzing the syllabus. Please try again.');
+      sanitized.statusCode = 504;
+      sanitized.code = 'AI_REQUEST_TIMEOUT';
+      return sanitized;
+    }
+
+    if (status === 401 || status === 403 || msg.includes('api_key') || msg.includes('unauthenticated')) {
+      const sanitized: any = new Error('AI service authorization failed. Please check your Gemini API key configuration.');
+      sanitized.statusCode = 500;
+      sanitized.code = 'AI_AUTH_ERROR';
+      return sanitized;
+    }
+
+    const sanitized: any = new Error('The AI service is temporarily busy. Please try processing the syllabus again.');
+    sanitized.statusCode = status >= 400 && status < 600 ? status : 503;
+    sanitized.code = 'AI_SERVICE_UNAVAILABLE';
+    return sanitized;
+  }
+
+  /**
+   * Invokes a specific model with exponential backoff for transient 503/429/timeout errors
+   */
+  public async callModelWithRetry(
+    model: string,
+    payload: string,
+    maxRetries = 3,
+    initialDelayMs = 1000,
+    backoffMultiplier = 2,
+    timeoutMs = 25000
+  ): Promise<string> {
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.generateWithTimeout(
+          this.ai!.models.generateContent({
+            model,
+            contents: payload
+          }),
+          timeoutMs
+        );
+
+        if (response && response.text) {
+          if (attempt > 1) {
+            console.log(`[AIService] Model ${model} recovered and succeeded on attempt ${attempt}/${maxRetries}`);
+          }
+          return response.text;
+        }
+        throw new Error(`Empty response returned by Gemini model ${model}`);
+      } catch (err: any) {
+        lastError = err;
+        const isTransient = this.isTransientError(err);
+        const isPermanent = this.isPermanentError(err);
+
+        console.warn(
+          `[AIService] Model ${model} attempt ${attempt}/${maxRetries} failed (transient: ${isTransient}, permanent: ${isPermanent}):`,
+          err?.message || err
+        );
+
+        // Fail fast on permanent errors (400, 401, 403, 404)
+        if (isPermanent) {
+          throw err;
+        }
+
+        // On transient errors, back off exponentially if attempts remain
+        if (attempt < maxRetries) {
+          const delay = Math.min(6000, initialDelayMs * Math.pow(backoffMultiplier, attempt - 1)) + Math.floor(Math.random() * 200);
+          console.log(`[AIService] Transient error on ${model}. Retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error(`Model ${model} failed after ${maxRetries} attempts`);
+  }
+
+  /**
    * Core generation wrapper with model fallback & error resilience
    */
   private async generateWithGemini(prompt: string, systemInstruction?: string): Promise<string> {
     if (!this.ai) {
-      throw new Error('Gemini API client not initialized');
+      const err: any = new Error('Gemini API client not initialized. Please verify GEMINI_API_KEY.');
+      err.statusCode = 503;
+      throw err;
     }
 
     const payload = systemInstruction ? `${systemInstruction}\n\n${prompt}` : prompt;
 
-    // Try primary model first with 7s timeout
-    try {
-      const response = await this.generateWithTimeout(
-        this.ai.models.generateContent({
-          model: this.primaryModel,
-          contents: payload
-        }),
-        7000
-      );
-      if (response.text) return response.text;
-    } catch (primaryErr: any) {
-      console.warn(`[AIService] Primary model ${this.primaryModel} failed or timed out:`, primaryErr?.message || primaryErr);
-      
-      // Attempt fallback model with 7s timeout
-      try {
-        const fallbackRes = await this.generateWithTimeout(
-          this.ai.models.generateContent({
-            model: this.fallbackModel,
-            contents: payload
-          }),
-          7000
-        );
-        if (fallbackRes.text) return fallbackRes.text;
-      } catch (fallbackErr: any) {
-        console.warn(`[AIService] Fallback model ${this.fallbackModel} also failed:`, fallbackErr?.message || fallbackErr);
-        throw fallbackErr;
-      }
-    }
+    console.log(`[AIService] Trying primary model: ${this.primaryModel}`);
 
-    throw new Error('Gemini response was empty');
+    // 1. Attempt Primary Model with exponential retries
+    try {
+      const result = await this.callModelWithRetry(this.primaryModel, payload, 3, 1000, 2, 25000);
+      return result;
+    } catch (primaryErr: any) {
+      const primaryStatus = primaryErr.status || primaryErr.statusCode || (this.isTransientError(primaryErr) ? '503' : 'Error');
+      console.warn(`[AIService] Primary failed: ${primaryStatus} (${primaryErr?.message || primaryErr})`);
+
+      // 2. Attempt Fallback Model with exponential retries
+      if (this.fallbackModel && this.fallbackModel !== this.primaryModel) {
+        console.log(`[AIService] Switching to fallback model: ${this.fallbackModel}`);
+        try {
+          const fallbackResult = await this.callModelWithRetry(this.fallbackModel, payload, 3, 1000, 2, 25000);
+          return fallbackResult;
+        } catch (fallbackErr: any) {
+          const fallbackStatus = fallbackErr.status || fallbackErr.statusCode || (this.isTransientError(fallbackErr) ? '503' : 'Error');
+          console.error(`[AIService] Fallback failed: ${fallbackStatus} (${fallbackErr?.message || fallbackErr})`);
+          throw this.sanitizeUserFacingError(fallbackErr);
+        }
+      }
+
+      throw this.sanitizeUserFacingError(primaryErr);
+    }
   }
 
   /**
@@ -215,6 +412,52 @@ export class AIService {
     }
 
     return { title, description };
+  }
+
+  /**
+   * Parse & structure raw extracted syllabus text into all subjects, units, topics, and subtopics.
+   * Strictly grounded in the provided syllabus text (no hallucination/dictionary fallback).
+   */
+  async parseSyllabusWithAI(syllabusText: string): Promise<AISyllabusResponse> {
+    if (!syllabusText || syllabusText.trim().length < 20) {
+      const err: any = new Error('Insufficient syllabus text provided for parsing');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!this.isAIAvailable()) {
+      const err: any = new Error('Gemini AI service is not available. Please verify your GEMINI_API_KEY configuration.');
+      err.statusCode = 503;
+      throw err;
+    }
+
+    try {
+      const systemPrompt = buildSyllabusParsingSystemPrompt();
+      const userPrompt = buildSyllabusParsingUserPrompt({ syllabusText });
+      const rawResponse = await this.generateWithGemini(userPrompt, systemPrompt);
+      const jsonStr = this.extractJSON(rawResponse);
+      const parsed = JSON.parse(jsonStr);
+      const validated = AISyllabusResponseSchema.parse(parsed);
+
+      return validated;
+    } catch (err: any) {
+      console.error('[AIService] parseSyllabusWithAI failed:', err?.message || err);
+
+      if (err instanceof z.ZodError) {
+        const issueMsg = err.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`).join(', ');
+        const customErr: any = new Error(`Syllabus AI output did not match required schema (${issueMsg}). Please retry with a clearer syllabus document.`);
+        customErr.statusCode = 422;
+        throw customErr;
+      }
+
+      if (err instanceof SyntaxError) {
+        const customErr: any = new Error('Gemini returned an unreadable response format. Please retry processing your syllabus.');
+        customErr.statusCode = 502;
+        throw customErr;
+      }
+
+      throw err;
+    }
   }
 
   /**

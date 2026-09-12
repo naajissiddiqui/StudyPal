@@ -5,6 +5,7 @@ import authRoutes from './routes/auth.routes';
 import planRoutes from './routes/plan.routes';
 import taskRoutes from './routes/task.routes';
 import aiRoutes from './routes/ai.routes';
+import syllabusRoutes from './routes/syllabus.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 export function createApp(): Express {
@@ -54,6 +55,7 @@ export function createApp(): Express {
   app.use('/api/plans', planRoutes);
   app.use('/api/tasks', taskRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/syllabus', syllabusRoutes);
 
   // Central Error Handler
   app.use(errorHandler);

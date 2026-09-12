@@ -170,5 +170,67 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ taskId })
       })
+  },
+
+  syllabus: {
+    upload: (file: File) => {
+      const formData = new FormData();
+      formData.append('syllabus', file);
+      return uploadFile<{
+        success: boolean;
+        message: string;
+        data: {
+          fileName: string;
+          institution?: string;
+          program?: string;
+          pageCount: number;
+          rawTextLength: number;
+          subjects: Array<{
+            name: string;
+            overview?: string;
+            units: Array<{
+              name: string;
+              topics: Array<{
+                name: string;
+                subtopics?: string[];
+                keyConcepts?: string[];
+              }>;
+            }>;
+            flattenedTopics: Array<{
+              name: string;
+              unitName: string;
+              subtopics: string[];
+              keyConcepts: string[];
+              status: 'WEAK' | 'AVERAGE' | 'STRONG';
+            }>;
+          }>;
+        };
+      }>('/syllabus/upload', formData);
+    }
   }
 };
+
+async function uploadFile<T>(endpoint: string, formData: FormData): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const token = localStorage.getItem('studypal_token');
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const errorMsg = data?.error?.message || data?.message || data?.error || 'Failed to upload and parse syllabus';
+    throw new Error(errorMsg);
+  }
+
+  return data;
+}
+

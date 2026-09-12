@@ -4,6 +4,33 @@ export interface ITopic {
   _id?: Types.ObjectId;
   name: string;
   status: 'WEAK' | 'AVERAGE' | 'STRONG' | 'COMPLETED';
+  unitName?: string;
+  subtopics?: string[];
+  keyConcepts?: string[];
+}
+
+export interface ISyllabusTopic {
+  name: string;
+  subtopics?: string[];
+  keyConcepts?: string[];
+}
+
+export interface ISyllabusUnit {
+  name: string;
+  topics: ISyllabusTopic[];
+}
+
+export interface ISyllabusSubject {
+  name: string;
+  overview?: string;
+  units: ISyllabusUnit[];
+}
+
+export interface IPlanSyllabus {
+  fileName: string;
+  uploadedAt: Date;
+  rawTextLength?: number;
+  subjects: ISyllabusSubject[];
 }
 
 export interface ISubject {
@@ -31,6 +58,7 @@ export interface IStudyPlan extends Document {
   breakDuration: number; // in minutes
   status: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
   subjects: ISubject[];
+  syllabus?: IPlanSyllabus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,9 +70,48 @@ const TopicSchema = new Schema<ITopic>(
       type: String, 
       enum: ['WEAK', 'AVERAGE', 'STRONG', 'COMPLETED'], 
       default: 'AVERAGE' 
-    }
+    },
+    unitName: { type: String, trim: true },
+    subtopics: [{ type: String, trim: true }],
+    keyConcepts: [{ type: String, trim: true }]
   },
   { _id: true }
+);
+
+const SyllabusTopicSchema = new Schema<ISyllabusTopic>(
+  {
+    name: { type: String, required: true, trim: true },
+    subtopics: [{ type: String, trim: true }],
+    keyConcepts: [{ type: String, trim: true }]
+  },
+  { _id: false }
+);
+
+const SyllabusUnitSchema = new Schema<ISyllabusUnit>(
+  {
+    name: { type: String, required: true, trim: true },
+    topics: [SyllabusTopicSchema]
+  },
+  { _id: false }
+);
+
+const SyllabusSubjectSchema = new Schema<ISyllabusSubject>(
+  {
+    name: { type: String, required: true, trim: true },
+    overview: { type: String, trim: true },
+    units: [SyllabusUnitSchema]
+  },
+  { _id: false }
+);
+
+const PlanSyllabusSchema = new Schema<IPlanSyllabus>(
+  {
+    fileName: { type: String, required: true, trim: true },
+    uploadedAt: { type: Date, default: Date.now },
+    rawTextLength: { type: Number },
+    subjects: [SyllabusSubjectSchema]
+  },
+  { _id: false }
 );
 
 const SubjectSchema = new Schema<ISubject>(
@@ -92,7 +159,8 @@ const StudyPlanSchema = new Schema<IStudyPlan>(
       default: 'ACTIVE',
       index: true 
     },
-    subjects: [SubjectSchema]
+    subjects: [SubjectSchema],
+    syllabus: { type: PlanSyllabusSchema, required: false }
   },
   {
     timestamps: true
@@ -100,3 +168,4 @@ const StudyPlanSchema = new Schema<IStudyPlan>(
 );
 
 export const StudyPlan = mongoose.model<IStudyPlan>('StudyPlan', StudyPlanSchema);
+

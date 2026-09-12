@@ -25,20 +25,23 @@ export function buildStudyPlanSystemPrompt(): string {
   return `You are StudyPal's Chief Pedagogical AI Planner.
 Your purpose is to design high-efficiency, personalized, and scientifically backed study timetables for students preparing for exams.
 
-Pedagogical Principles you must strictly apply:
-1. Spaced Repetition & Progressive Overload:
+PEDAGOGICAL & SYLLABUS GROUNDING PRINCIPLES:
+1. Grounded Curriculum:
+   - When syllabus topics are supplied for a subject, the supplied syllabus is the authoritative curriculum.
+   - Generate educational planning strictly around these topics. Do NOT introduce topics outside the supplied syllabus.
+2. Spaced Repetition & Progressive Overload:
    - Phase 1 (Initial 40% of time window): LEARNING & Concept Mastery for all topics (prioritize WEAK confidence & HARD subjects first).
    - Phase 2 (Next 30% of time window): PRACTICE & Problem Solving (application, past paper questions, high-yield problems).
    - Phase 3 (Next 20% of time window): REVISION & Active Recall (flashcards, mistake logs, summary sheets).
    - Phase 4 (Final 10% leading to exam date): MOCK_TEST & Timed Exam Simulation under exam constraints.
 
-2. Workload & Focus Balance:
+3. Workload & Focus Balance:
    - Avoid cognitive fatigue: alternate hard technical subjects with lighter review.
    - Ensure study blocks match the student's preferred study times.
    - Never schedule study tasks for a subject after its exam date has passed.
    - Respect daily study limits strictly.
 
-3. Strict Output Requirements:
+4. Strict Output Requirements:
    - You MUST respond with ONLY valid JSON (no markdown formatting, no code blocks, no preamble, no trailing commentary).
    - The JSON must adhere strictly to the requested schema.`;
 }
@@ -52,16 +55,18 @@ STUDENT PROFILE:
 - Preferred Time Slots: ${context.preferredStudyTimes.join(', ')}
 - Plan Schedule Range: From ${context.startDate} to ${context.endDate} (${context.daysUntilExam} total days)
 
-SUBJECTS & SYLLABUS:
+SUBJECTS & SYLLABUS (Authoritative Curriculum):
 ${context.subjects
   .map(
     (s, idx) =>
       `${idx + 1}. ${s.name}
    - Difficulty: ${s.difficulty} | Confidence: ${s.confidence}
    - Exam Date: ${s.examDate || 'Not specified'}
-   - Topics: ${s.topics.length > 0 ? s.topics.join(', ') : 'Standard core syllabus'}`
+   - Authoritative Topics: ${s.topics.length > 0 ? s.topics.join(', ') : 'Standard core syllabus'}`
   )
   .join('\n')}
+
+INSTRUCTION: Ground all study blocks strictly in the authoritative topics listed above. Do not invent out-of-syllabus topics.
 
 OUTPUT JSON SCHEMA:
 {

@@ -6,7 +6,15 @@ import {
   ArrowLeft,
   Plus,
   Trash2,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  UploadCloud,
+  X,
+  Layers,
+  Eye,
+  RotateCcw,
+  BookOpen,
+  Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +25,42 @@ import { Spinner } from '../components/ui/Spinner';
 interface TopicData {
   name: string;
   status: 'WEAK' | 'AVERAGE' | 'STRONG' | 'COMPLETED';
+  unitName?: string;
+  subtopics?: string[];
+  keyConcepts?: string[];
+}
+
+interface SyllabusTopicItem {
+  name: string;
+  subtopics?: string[];
+  keyConcepts?: string[];
+}
+
+interface SyllabusUnitData {
+  name: string;
+  topics: SyllabusTopicItem[];
+}
+
+interface SyllabusSubjectData {
+  name: string;
+  overview?: string;
+  units: SyllabusUnitData[];
+  flattenedTopics: Array<{
+    name: string;
+    unitName: string;
+    subtopics: string[];
+    keyConcepts: string[];
+    status: 'WEAK' | 'AVERAGE' | 'STRONG';
+  }>;
+}
+
+interface PlanSyllabusData {
+  fileName: string;
+  institution?: string;
+  program?: string;
+  pageCount: number;
+  rawTextLength: number;
+  subjects: SyllabusSubjectData[];
 }
 
 interface SubjectData {
@@ -45,6 +89,12 @@ export const CreatePlanPage: React.FC = () => {
     return d.toISOString().split('T')[0];
   });
 
+  // Plan-Level Syllabus State
+  const [planSyllabus, setPlanSyllabus] = useState<PlanSyllabusData | null>(null);
+  const [uploadingSyllabus, setUploadingSyllabus] = useState<boolean>(false);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [syllabusPreviewOpen, setSyllabusPreviewOpen] = useState<boolean>(false);
+
   // Subjects & Topics
   const [subjects, setSubjects] = useState<SubjectData[]>([
     {
@@ -57,10 +107,10 @@ export const CreatePlanPage: React.FC = () => {
       difficulty: 'HARD',
       confidence: 'WEAK',
       topics: [
-        { name: 'Arrays & Two Pointers', status: 'AVERAGE' },
-        { name: 'Linked Lists & Stacks', status: 'AVERAGE' },
-        { name: 'Binary Trees & BST', status: 'WEAK' },
-        { name: 'Dynamic Programming', status: 'WEAK' }
+        { name: 'Arrays & Two Pointers', status: 'AVERAGE', unitName: 'Unit 1: Linear Structures' },
+        { name: 'Linked Lists & Stacks', status: 'AVERAGE', unitName: 'Unit 1: Linear Structures' },
+        { name: 'Binary Trees & BST', status: 'WEAK', unitName: 'Unit 2: Non-Linear Structures' },
+        { name: 'Dynamic Programming', status: 'WEAK', unitName: 'Unit 3: Advanced Problem Solving' }
       ]
     },
     {
@@ -73,14 +123,14 @@ export const CreatePlanPage: React.FC = () => {
       difficulty: 'MEDIUM',
       confidence: 'AVERAGE',
       topics: [
-        { name: 'Process Scheduling & Threads', status: 'STRONG' },
-        { name: 'Memory Management & Paging', status: 'AVERAGE' },
-        { name: 'Concurrency & Deadlocks', status: 'WEAK' }
+        { name: 'Process Scheduling & Threads', status: 'STRONG', unitName: 'Unit 1: Process Management' },
+        { name: 'Memory Management & Paging', status: 'AVERAGE', unitName: 'Unit 2: Memory Hierarchy' },
+        { name: 'Concurrency & Deadlocks', status: 'WEAK', unitName: 'Unit 3: Synchronization' }
       ]
     }
   ]);
 
-  // Topic input helper
+  // Topic input helper for Step 4
   const [newTopicInputs, setNewTopicInputs] = useState<{ [key: number]: string }>({});
 
   // Availability
@@ -91,8 +141,6 @@ export const CreatePlanPage: React.FC = () => {
   const [sessionLength, setSessionLength] = useState<number>(60);
   const [breakDuration, setBreakDuration] = useState<number>(15);
 
-  // AI Topic Suggester State
-  const [loadingAiTopics, setLoadingAiTopics] = useState<{ [key: number]: boolean }>({});
   const [aiMessage, setAiMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Subject Handlers
@@ -122,55 +170,90 @@ export const CreatePlanPage: React.FC = () => {
     setSubjects(updated);
   };
 
-  // AI Syllabus & Topic Breakdown Generation
-  const handleSuggestTopics = async (sIdx: number) => {
-    const subject = subjects[sIdx];
-    if (!subject.name || subject.name.trim() === '') {
-      setAiMessage({ type: 'error', text: 'Please enter a Subject Name first (e.g. Operating Systems, Calculus, DSA).' });
-      setTimeout(() => setAiMessage(null), 4000);
+  // Plan-Level Single Syllabus PDF Upload Handler
+  const handleUploadPlanSyllabus = async (file: File) => {
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setAiMessage({ type: 'error', text: 'Please select a valid PDF file (.pdf).' });
+      setTimeout(() => setAiMessage(null), 5000);
       return;
     }
 
-    setLoadingAiTopics(prev => ({ ...prev, [sIdx]: true }));
+    if (file.size > 10 * 1024 * 1024) {
+      setAiMessage({ type: 'error', text: 'PDF file size exceeds 10MB limit. Please upload a smaller syllabus.' });
+      setTimeout(() => setAiMessage(null), 5000);
+      return;
+    }
+
+    setUploadingSyllabus(true);
     setAiMessage(null);
 
     try {
-      const res = await api.ai.suggestTopics({
-        subjectName: subject.name.trim(),
-        gradeLevel: educationLevel,
-        examType: examType
-      });
+      const res = await api.syllabus.upload(file);
 
-      if (res.success && res.data?.suggestedTopics?.length > 0) {
-        const generatedTopics: TopicData[] = res.data.suggestedTopics.map(t => ({
-          name: t.name,
-          status: t.difficulty === 'HARD' ? 'WEAK' : t.difficulty === 'EASY' ? 'STRONG' : 'AVERAGE'
-        }));
+      if (res.success && res.data) {
+        const { fileName, institution, program, pageCount, rawTextLength, subjects: extractedSubjects } = res.data;
 
-        setSubjects(prev => {
-          const copy = [...prev];
-          copy[sIdx] = {
-            ...copy[sIdx],
-            topics: generatedTopics
-          };
-          return copy;
+        // Store plan syllabus structure
+        setPlanSyllabus({
+          fileName,
+          institution,
+          program,
+          pageCount,
+          rawTextLength,
+          subjects: extractedSubjects
         });
 
+        // Automatically populate subject cards
+        const baseStartDate = new Date(examStartDate || new Date());
+        const populatedSubjects: SubjectData[] = extractedSubjects.map((s, idx) => {
+          const defaultExamDate = new Date(baseStartDate);
+          defaultExamDate.setDate(defaultExamDate.getDate() + 14 + (idx * 4));
+
+          return {
+            name: s.name,
+            examDate: defaultExamDate.toISOString().split('T')[0],
+            difficulty: 'MEDIUM',
+            confidence: 'AVERAGE',
+            topics: s.flattenedTopics.map(t => ({
+              name: t.name,
+              unitName: t.unitName,
+              subtopics: t.subtopics,
+              keyConcepts: t.keyConcepts,
+              status: t.status || 'AVERAGE'
+            }))
+          };
+        });
+
+        setSubjects(populatedSubjects);
+
+        const totalTopics = extractedSubjects.reduce((acc, s) => acc + s.flattenedTopics.length, 0);
         setAiMessage({
           type: 'success',
-          text: `✨ StudyPal generated ${generatedTopics.length} high-yield topics for "${subject.name}"!`
+          text: `✓ Syllabus Processed: Gemini extracted ${extractedSubjects.length} subjects & ${totalTopics} topics from "${fileName}"!`
         });
-        setTimeout(() => setAiMessage(null), 5000);
+        setTimeout(() => setAiMessage(null), 7000);
       }
     } catch (err: any) {
+      console.error('Syllabus upload error:', err);
       setAiMessage({
         type: 'error',
-        text: `Could not suggest topics: ${err.message || 'Please try again'}`
+        text: `Syllabus parsing failed: ${err.message || 'Please verify the PDF contains readable text and try again.'}`
       });
-      setTimeout(() => setAiMessage(null), 4000);
+      setTimeout(() => setAiMessage(null), 7000);
     } finally {
-      setLoadingAiTopics(prev => ({ ...prev, [sIdx]: false }));
+      setUploadingSyllabus(false);
     }
+  };
+
+  const handleRemovePlanSyllabus = () => {
+    setPlanSyllabus(null);
+    setAiMessage({
+      type: 'success',
+      text: 'Uploaded syllabus removed. You can upload a new syllabus or continue with manual subject configuration.'
+    });
+    setTimeout(() => setAiMessage(null), 4000);
   };
 
   const addTopic = (subjectIdx: number) => {
@@ -178,7 +261,7 @@ export const CreatePlanPage: React.FC = () => {
     if (!topicText) return;
 
     const updated = [...subjects];
-    updated[subjectIdx].topics.push({ name: topicText, status: 'AVERAGE' });
+    updated[subjectIdx].topics.push({ name: topicText, status: 'AVERAGE', unitName: 'Custom Topics' });
     setSubjects(updated);
     setNewTopicInputs({ ...newTopicInputs, [subjectIdx]: '' });
   };
@@ -198,13 +281,18 @@ export const CreatePlanPage: React.FC = () => {
 
   // Submit Plan Generation
   const handleGeneratePlan = async () => {
+    if (subjects.length === 0 || subjects.every(s => s.name.trim().length === 0)) {
+      alert('Please define at least one subject before generating your study plan.');
+      return;
+    }
+
     setStep(6);
 
     const stages = [
-      'Understanding your syllabus and topics...',
-      'Prioritizing high-weightage & weak areas...',
-      'Balancing study blocks against your daily availability...',
-      'Building your personalized adaptive study timetable...'
+      'Grounding curriculum in your official syllabus topics...',
+      'Calculating deterministic priority scores (Urgency × Difficulty × Weakness)...',
+      'Balancing daily study blocks and cognitive rest intervals...',
+      'Synthesizing your personalized, collision-free study timetable...'
     ];
 
     for (let i = 0; i < stages.length; i++) {
@@ -225,7 +313,22 @@ export const CreatePlanPage: React.FC = () => {
         preferredStudyEnd,
         sessionLength: Number(sessionLength),
         breakDuration: Number(breakDuration),
-        subjects: subjects.filter(s => s.name.trim().length > 0)
+        syllabus: planSyllabus ? {
+          fileName: planSyllabus.fileName,
+          rawTextLength: planSyllabus.rawTextLength,
+          subjects: planSyllabus.subjects.map(s => ({
+            name: s.name,
+            overview: s.overview,
+            units: s.units
+          }))
+        } : undefined,
+        subjects: subjects.filter(s => s.name.trim().length > 0).map(s => ({
+          name: s.name,
+          examDate: s.examDate,
+          difficulty: s.difficulty,
+          confidence: s.confidence,
+          topics: s.topics.length > 0 ? s.topics : [{ name: 'Core Foundations', status: 'AVERAGE' }]
+        }))
       });
 
       confetti({
@@ -248,7 +351,7 @@ export const CreatePlanPage: React.FC = () => {
     <div style={{ minHeight: '100vh', backgroundColor: '#F7F8FE', display: 'flex', flexDirection: 'column' }}>
       <AppNavbar />
 
-      <div className="container" style={{ flex: 1, padding: '40px 24px', maxWidth: '840px' }}>
+      <div className="container" style={{ flex: 1, padding: '40px 24px', maxWidth: '860px' }}>
         {/* Step Indicator Header */}
         <div style={{
           background: '#FFFFFF',
@@ -288,7 +391,7 @@ export const CreatePlanPage: React.FC = () => {
           padding: '36px',
           boxShadow: '0 20px 45px -12px rgba(84, 72, 248, 0.08)',
           border: '1px solid rgba(228, 233, 250, 0.9)',
-          minHeight: '440px',
+          minHeight: '460px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between'
@@ -395,22 +498,22 @@ export const CreatePlanPage: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 2: EXAM TIMELINE */}
+          {/* STEP 2: TIMELINE */}
           {step === 2 && (
             <div>
               <div style={{ marginBottom: '24px' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
-                  Step 2: Target Exam Timeline
+                  Step 2: Exam Timeline & Window
                 </h2>
                 <p style={{ fontSize: '14.5px', color: '#64748B', marginTop: '4px' }}>
-                  Define your preparation window from today until your last exam date.
+                  Define your study prep start date and final examination deadline.
                 </p>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                    Preparation Start Date
+                    Study Plan Start Date
                   </label>
                   <input
                     type="date"
@@ -429,7 +532,7 @@ export const CreatePlanPage: React.FC = () => {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                    Final Exam Date (Finish Line)
+                    Final Exam End Date
                   </label>
                   <input
                     type="date"
@@ -459,63 +562,353 @@ export const CreatePlanPage: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 3: SUBJECTS */}
+          {/* STEP 3: DEFINE YOUR SUBJECTS & SYLLABUS */}
           {step === 3 && (
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
+                  Step 3: Define Your Subjects & Syllabus
+                </h2>
+                <p style={{ fontSize: '14px', color: '#64748B', marginTop: '2px' }}>
+                  Upload your official syllabus PDF once to auto-extract all subjects, units, and topics for your study plan.
+                </p>
+              </div>
+
+              {/* TOP OF STEP 3: OFFICIAL SYLLABUS UPLOAD BOX */}
+              {!planSyllabus ? (
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(true);
+                  }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragOver(false);
+                    if (e.dataTransfer.files?.[0]) {
+                      handleUploadPlanSyllabus(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  style={{
+                    background: isDragOver ? '#EEF2FF' : '#F8FAFF',
+                    border: isDragOver ? '2px dashed #5448F8' : '2px dashed #C7D2FE',
+                    borderRadius: '20px',
+                    padding: '30px 24px',
+                    textAlign: 'center',
+                    marginBottom: '26px',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 4px 16px rgba(84, 72, 248, 0.04)'
+                  }}
+                >
+                  <div style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '16px',
+                    background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)',
+                    color: '#5448F8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 14px auto',
+                    boxShadow: '0 4px 12px rgba(84, 72, 248, 0.12)'
+                  }}>
+                    {uploadingSyllabus ? <Spinner size="md" color="#5448F8" /> : <UploadCloud size={28} />}
+                  </div>
+
+                  <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1E1B4B', margin: '0 0 6px 0' }}>
+                    {uploadingSyllabus ? 'Extracting Curriculum...' : 'Upload Your Official Syllabus'}
+                  </h3>
+
+                  <p style={{ fontSize: '13.5px', color: '#64748B', maxWidth: '520px', margin: '0 auto 18px auto', lineHeight: 1.5 }}>
+                    {uploadingSyllabus
+                      ? 'Reading PDF document, identifying all subjects, units, and high-yield topics...'
+                      : 'Upload your university/exam board syllabus PDF. This single document will be used as the authoritative source of truth for your entire study plan.'}
+                  </p>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+                    <label style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: uploadingSyllabus ? '#94A3B8' : 'linear-gradient(135deg, #5448F8 0%, #6D5FF7 100%)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '10px 24px',
+                      borderRadius: '12px',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: uploadingSyllabus ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(84, 72, 248, 0.3)',
+                      transition: 'transform 0.15s ease'
+                    }}>
+                      {uploadingSyllabus ? <Spinner size="xs" color="#FFFFFF" /> : <UploadCloud size={16} />}
+                      <span>{uploadingSyllabus ? 'Analyzing Syllabus...' : 'Upload Syllabus PDF'}</span>
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        disabled={uploadingSyllabus}
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) {
+                            handleUploadPlanSyllabus(e.target.files[0]);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '12px' }}>
+                    Supports PDF up to 10MB • All subjects extracted automatically
+                  </div>
+                </div>
+              ) : (
+                /* PROCESSED SYLLABUS BANNER */
+                <div style={{
+                  background: 'linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%)',
+                  border: '1.5px solid #86EFAC',
+                  borderRadius: '20px',
+                  padding: '20px 24px',
+                  marginBottom: '26px',
+                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.08)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        background: '#DCFCE7',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#16A34A',
+                        boxShadow: '0 2px 8px rgba(22, 163, 74, 0.15)'
+                      }}>
+                        <FileText size={22} />
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: 800, color: '#166534' }}>
+                            ✓ Syllabus Processed
+                          </span>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#15803D',
+                            background: '#BBF7D0',
+                            padding: '2px 8px',
+                            borderRadius: '999px'
+                          }}>
+                            Source of Truth
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '12.5px', color: '#15803D', margin: '2px 0 0 0' }}>
+                          Extracted from <strong>{planSyllabus.fileName}</strong> ({planSyllabus.pageCount} pages)
+                          {planSyllabus.institution ? ` • ${planSyllabus.institution}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSyllabusPreviewOpen(true)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#FFFFFF',
+                          color: '#166534',
+                          border: '1px solid #86EFAC',
+                          padding: '7px 14px',
+                          borderRadius: '10px',
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.04)'
+                        }}
+                      >
+                        <Eye size={14} />
+                        <span>Review Extracted Curriculum</span>
+                      </button>
+
+                      <label style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: '#FFFFFF',
+                        color: '#334155',
+                        border: '1px solid #CBD5E1',
+                        padding: '7px 14px',
+                        borderRadius: '10px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}>
+                        <RotateCcw size={13} />
+                        <span>Replace PDF</span>
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            if (e.target.files?.[0]) {
+                              handleUploadPlanSyllabus(e.target.files[0]);
+                            }
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={handleRemovePlanSyllabus}
+                        title="Remove uploaded syllabus"
+                        style={{
+                          background: '#FEE2E2',
+                          color: '#DC2626',
+                          border: 'none',
+                          padding: '7px 10px',
+                          borderRadius: '10px',
+                          fontSize: '12px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <X size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Extracted Subjects Pill Bar */}
+                  <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(134, 239, 172, 0.4)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#166534', marginBottom: '8px' }}>
+                      We found {planSyllabus.subjects.length} subjects in your curriculum:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {planSyllabus.subjects.map((sub, sIdx) => (
+                        <div key={sIdx} style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#FFFFFF',
+                          border: '1px solid #86EFAC',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: '#166534'
+                        }}>
+                          <BookOpen size={12} color="#16A34A" />
+                          <span>{sub.name}</span>
+                          <span style={{ fontSize: '10.5px', color: '#15803D', background: '#DCFCE7', padding: '1px 5px', borderRadius: '4px' }}>
+                            {sub.units.length} Units • {sub.flattenedTopics.length} Topics
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SUBJECT CONFIGURATION CARDS SECTION */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
-                  <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
-                    Step 3: Define Your Subjects
-                  </h2>
-                  <p style={{ fontSize: '14px', color: '#64748B', marginTop: '2px' }}>
-                    Set difficulty and your confidence level for each subject.
+                  <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                    {planSyllabus ? 'Configure Extracted Subjects' : 'Your Subject List'}
+                  </h3>
+                  <p style={{ fontSize: '13px', color: '#64748B', margin: '2px 0 0 0' }}>
+                    Set your exam dates, difficulty levels, and current confidence for each subject.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={addSubject}
                   className="btn-signin"
-                  style={{ gap: '6px', fontSize: '13.5px' }}
+                  style={{ gap: '6px', fontSize: '13px', padding: '6px 14px' }}
                 >
-                  <Plus size={16} />
-                  <span>Add Subject</span>
+                  <Plus size={15} />
+                  <span>Add Subject Manually</span>
                 </button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '380px', overflowY: 'auto', paddingRight: '4px' }}>
+              {/* Subject Cards List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
                 {subjects.map((sub, idx) => (
                   <div key={idx} style={{
                     background: '#F8FAFC',
                     border: '1px solid #E2E8F0',
                     borderRadius: '16px',
                     padding: '18px 20px',
-                    position: 'relative'
+                    position: 'relative',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
                   }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'center' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
-                          Subject Name
-                        </label>
+                    {/* Header Row: Subject Name + Topic Tag Badge + Remove Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', gap: '10px' }}>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <input
                           type="text"
                           required
                           value={sub.name}
                           onChange={(e) => updateSubject(idx, 'name', e.target.value)}
-                          placeholder="e.g. Mathematics"
+                          placeholder="Subject Name (e.g. Data Structures & Algorithms)"
                           style={{
-                            width: '100%',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
+                            flex: 1,
+                            padding: '8px 14px',
+                            borderRadius: '10px',
                             border: '1px solid #CBD5E1',
-                            fontSize: '13.5px',
+                            fontSize: '14.5px',
+                            fontWeight: 700,
+                            color: '#0F172A',
                             outline: 'none',
                             background: '#FFFFFF'
                           }}
                         />
+                        {sub.topics.length > 0 && (
+                          <span style={{
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            color: '#5448F8',
+                            background: '#EEF2FF',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            <Layers size={12} />
+                            {sub.topics.length} Syllabus Topics
+                          </span>
+                        )}
                       </div>
 
+                      {subjects.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSubject(idx)}
+                          title="Remove this subject"
+                          style={{
+                            background: '#FEE2E2',
+                            border: 'none',
+                            color: '#DC2626',
+                            padding: '7px 10px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Form Controls Grid: Exam Date, Difficulty, Confidence */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '14px', alignItems: 'center' }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
+                          <Calendar size={12} />
                           Exam Date
                         </label>
                         <input
@@ -537,7 +930,7 @@ export const CreatePlanPage: React.FC = () => {
 
                       <div>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
-                          Difficulty
+                          Difficulty Level
                         </label>
                         <select
                           value={sub.difficulty}
@@ -552,15 +945,15 @@ export const CreatePlanPage: React.FC = () => {
                             background: '#FFFFFF'
                           }}
                         >
-                          <option value="EASY">Easy</option>
-                          <option value="MEDIUM">Medium</option>
-                          <option value="HARD">Hard</option>
+                          <option value="EASY">Easy (0.9x)</option>
+                          <option value="MEDIUM">Medium (1.2x)</option>
+                          <option value="HARD">Hard (1.6x)</option>
                         </select>
                       </div>
 
                       <div>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
-                          Confidence
+                          Current Confidence
                         </label>
                         <select
                           value={sub.confidence}
@@ -575,56 +968,11 @@ export const CreatePlanPage: React.FC = () => {
                             background: '#FFFFFF'
                           }}
                         >
-                          <option value="WEAK">Weak (Need focus)</option>
-                          <option value="AVERAGE">Average</option>
-                          <option value="STRONG">Strong</option>
+                          <option value="WEAK">Weak (1.8x priority)</option>
+                          <option value="AVERAGE">Average (1.2x)</option>
+                          <option value="STRONG">Strong (0.8x)</option>
                         </select>
                       </div>
-
-                      {subjects.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeSubject(idx)}
-                          style={{
-                            marginTop: '18px',
-                            background: '#FEE2E2',
-                            border: 'none',
-                            color: '#DC2626',
-                            padding: '8px',
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* AI Syllabus Generator Action */}
-                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleSuggestTopics(idx)}
-                        disabled={loadingAiTopics[idx]}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '7px',
-                          background: 'linear-gradient(135deg, #5448F8 0%, #7C3AED 100%)',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          padding: '7px 16px',
-                          borderRadius: '8px',
-                          fontSize: '12.5px',
-                          fontWeight: 600,
-                          cursor: loadingAiTopics[idx] ? 'not-allowed' : 'pointer',
-                          opacity: loadingAiTopics[idx] ? 0.75 : 1,
-                          boxShadow: '0 2px 8px rgba(84, 72, 248, 0.2)'
-                        }}
-                      >
-                        {loadingAiTopics[idx] ? <Spinner size="xs" color="#FFFFFF" /> : <Sparkles size={13} />}
-                        <span>{loadingAiTopics[idx] ? 'Generating Syllabus...' : '✨ Suggest Topics with AI'}</span>
-                      </button>
                     </div>
                   </div>
                 ))}
@@ -632,140 +980,197 @@ export const CreatePlanPage: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 4: TOPICS */}
+          {/* STEP 4: TOPICS & CONFIDENCE REVIEW */}
           {step === 4 && (
             <div>
               <div style={{ marginBottom: '20px' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
-                  Step 4: Topics Under Each Subject
+                  Step 4: Review Curriculum Topics
                 </h2>
                 <p style={{ fontSize: '14px', color: '#64748B', marginTop: '2px' }}>
-                  Break down each subject into key units or chapters for targeted spaced learning.
+                  Review units extracted from your syllabus and customize topic-level confidence before timetable generation.
                 </p>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: '380px', overflowY: 'auto', paddingRight: '4px' }}>
-                {subjects.map((sub, sIdx) => (
-                  <div key={sIdx} style={{
-                    background: '#F8FAFC',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: '16px',
-                    padding: '20px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
-                        {sub.name || `Subject ${sIdx + 1}`}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleSuggestTopics(sIdx)}
-                          disabled={loadingAiTopics[sIdx]}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            background: 'linear-gradient(135deg, #5448F8 0%, #7C3AED 100%)',
-                            color: '#FFFFFF',
-                            border: 'none',
-                            padding: '6px 14px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            cursor: loadingAiTopics[sIdx] ? 'not-allowed' : 'pointer',
-                            opacity: loadingAiTopics[sIdx] ? 0.75 : 1
-                          }}
-                        >
-                          {loadingAiTopics[sIdx] ? <Spinner size="xs" color="#FFFFFF" /> : <Sparkles size={12} />}
-                          <span>{loadingAiTopics[sIdx] ? 'Synthesizing...' : 'Auto-Generate with AI'}</span>
-                        </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                {subjects.map((sub, sIdx) => {
+                  // Group topics by unitName
+                  const unitGroups: { [unitName: string]: TopicData[] } = {};
+                  for (const t of sub.topics) {
+                    const uName = t.unitName || 'Core Curriculum Topics';
+                    if (!unitGroups[uName]) unitGroups[uName] = [];
+                    unitGroups[uName].push(t);
+                  }
+
+                  return (
+                    <div key={sIdx} style={{
+                      background: '#F8FAFC',
+                      border: '1.5px solid #E2E8F0',
+                      borderRadius: '16px',
+                      padding: '20px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                            {sub.name || `Subject ${sIdx + 1}`}
+                          </span>
+                          {planSyllabus && (
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#065F46',
+                              background: '#D1FAE5',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <CheckCircle2 size={12} />
+                              Syllabus Grounded
+                            </span>
+                          )}
+                        </div>
+
                         <span style={{ fontSize: '12px', color: '#64748B' }}>
                           {sub.topics.length} topic{sub.topics.length !== 1 ? 's' : ''}
                         </span>
                       </div>
-                    </div>
 
-                    {/* Topic Tags */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
-                      {sub.topics.map((t, tIdx) => (
-                        <div key={tIdx} style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          background: t.status === 'WEAK' ? '#FEF2F2' : t.status === 'STRONG' ? '#ECFDF5' : '#FFFFFF',
-                          border: t.status === 'WEAK' ? '1px solid #FECACA' : t.status === 'STRONG' ? '1px solid #A7F3D0' : '1px solid #CBD5E1',
-                          padding: '4px 10px',
-                          borderRadius: '8px',
-                          fontSize: '13px'
-                        }}>
-                          <span style={{ fontWeight: 600, color: '#1E293B' }}>{t.name}</span>
-                          <select
-                            value={t.status}
-                            onChange={(e) => updateTopicStatus(sIdx, tIdx, e.target.value as any)}
-                            style={{
-                              border: 'none',
-                              background: 'transparent',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              color: t.status === 'WEAK' ? '#DC2626' : t.status === 'STRONG' ? '#059669' : '#5448F8',
-                              cursor: 'pointer',
-                              outline: 'none'
-                            }}
-                          >
-                            <option value="WEAK">Weak</option>
-                            <option value="AVERAGE">Average</option>
-                            <option value="STRONG">Strong</option>
-                          </select>
-                          {sub.topics.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeTopic(sIdx, tIdx)}
-                              style={{ border: 'none', background: 'none', color: '#94A3B8', cursor: 'pointer', padding: 0 }}
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          )}
+                      {/* Topic Tags Grouped by Unit */}
+                      {Object.entries(unitGroups).map(([unitName, unitTopics], uIdx) => (
+                        <div key={uIdx} style={{ marginBottom: '16px' }}>
+                          <div style={{
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            color: '#5448F8',
+                            marginBottom: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <Layers size={13} />
+                            <span>{unitName}</span>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {unitTopics.map((t) => {
+                              const tIdx = sub.topics.findIndex(item => item === t);
+                              return (
+                                <div key={tIdx} style={{
+                                  background: t.status === 'WEAK' ? '#FEF2F2' : t.status === 'STRONG' ? '#ECFDF5' : '#FFFFFF',
+                                  border: t.status === 'WEAK' ? '1px solid #FECACA' : t.status === 'STRONG' ? '1px solid #A7F3D0' : '1px solid #E2E8F0',
+                                  padding: '10px 14px',
+                                  borderRadius: '8px',
+                                  fontSize: '13px'
+                                }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                                    <span style={{ fontWeight: 600, color: '#1E293B' }}>{t.name}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <select
+                                        value={t.status}
+                                        onChange={(e) => updateTopicStatus(sIdx, tIdx, e.target.value as any)}
+                                        style={{
+                                          border: '1px solid #CBD5E1',
+                                          background: '#FFFFFF',
+                                          borderRadius: '6px',
+                                          padding: '2px 8px',
+                                          fontSize: '11px',
+                                          fontWeight: 700,
+                                          color: t.status === 'WEAK' ? '#DC2626' : t.status === 'STRONG' ? '#059669' : '#5448F8',
+                                          cursor: 'pointer',
+                                          outline: 'none'
+                                        }}
+                                      >
+                                        <option value="WEAK">Weak</option>
+                                        <option value="AVERAGE">Average</option>
+                                        <option value="STRONG">Strong</option>
+                                      </select>
+                                      {sub.topics.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => removeTopic(sIdx, tIdx)}
+                                          title="Remove topic"
+                                          style={{ border: 'none', background: 'none', color: '#94A3B8', cursor: 'pointer', padding: 0 }}
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* ACTUAL NAMED SUBTOPICS */}
+                                  {t.subtopics && t.subtopics.length > 0 && (
+                                    <div style={{ marginTop: '8px', paddingLeft: '10px', borderLeft: '2px solid #E0E7FF' }}>
+                                      <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748B', marginBottom: '4px' }}>
+                                        Subtopics:
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {t.subtopics.map((st, stIdx) => (
+                                          <div key={stIdx} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                            <span style={{ color: '#5448F8', fontSize: '10px' }}>•</span>
+                                            <span>{st}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* KEY CONCEPTS */}
+                                  {t.keyConcepts && t.keyConcepts.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px', paddingLeft: '10px' }}>
+                                      {t.keyConcepts.map((kc, i) => (
+                                        <span key={i} style={{ fontSize: '10.5px', background: '#EEF2FF', color: '#4F46E5', padding: '1px 6px', borderRadius: '4px' }}>
+                                          ⚡ {kc}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       ))}
-                    </div>
 
-                    {/* Add Topic Input */}
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="text"
-                        placeholder="Add topic (e.g. Graph Algorithms, Thermodynamics)"
-                        value={newTopicInputs[sIdx] || ''}
-                        onChange={(e) => setNewTopicInputs({ ...newTopicInputs, [sIdx]: e.target.value })}
-                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTopic(sIdx))}
-                        style={{
-                          flex: 1,
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          border: '1px solid #CBD5E1',
-                          fontSize: '13px',
-                          outline: 'none',
-                          background: '#FFFFFF'
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => addTopic(sIdx)}
-                        style={{
-                          background: '#5448F8',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          padding: '8px 14px',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Add
-                      </button>
+                      {/* Add Topic Input */}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <input
+                          type="text"
+                          placeholder="Add topic (e.g. Graph Algorithms, Thermodynamics)"
+                          value={newTopicInputs[sIdx] || ''}
+                          onChange={(e) => setNewTopicInputs({ ...newTopicInputs, [sIdx]: e.target.value })}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTopic(sIdx))}
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #CBD5E1',
+                            fontSize: '13px',
+                            outline: 'none',
+                            background: '#FFFFFF'
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => addTopic(sIdx)}
+                          style={{
+                            background: '#5448F8',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -946,7 +1351,7 @@ export const CreatePlanPage: React.FC = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '440px', textAlign: 'left', width: '100%' }}>
                 {[
-                  'Analyzing your subjects and topics...',
+                  'Grounding curriculum in your official syllabus topics...',
                   'Prioritizing upcoming exams and weak areas...',
                   'Balancing your available study hours...',
                   'Building your adaptive study sessions...'
@@ -982,6 +1387,195 @@ export const CreatePlanPage: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Full Syllabus Review Modal */}
+          {syllabusPreviewOpen && planSyllabus && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.65)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 9999,
+              padding: '20px'
+            }}>
+              <div style={{
+                background: '#FFFFFF',
+                borderRadius: '24px',
+                maxWidth: '750px',
+                width: '100%',
+                maxHeight: '85vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                overflow: 'hidden',
+                animation: 'fadeIn 0.2s ease-out'
+              }}>
+                {/* Modal Header */}
+                <div style={{
+                  padding: '20px 24px',
+                  borderBottom: '1px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: '#F8FAFC'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '10px',
+                      background: '#DCFCE7',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#16A34A'
+                    }}>
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '17px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                        Official Extracted Curriculum
+                      </h3>
+                      <p style={{ fontSize: '12.5px', color: '#64748B', margin: '2px 0 0 0' }}>
+                        Source: {planSyllabus.fileName} ({planSyllabus.subjects.length} Subjects Extracted)
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSyllabusPreviewOpen(false)}
+                    style={{
+                      border: 'none',
+                      background: '#F1F5F9',
+                      color: '#64748B',
+                      borderRadius: '8px',
+                      width: '32px',
+                      height: '32px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {planSyllabus.subjects.map((sub, sIdx) => (
+                    <div key={sIdx} style={{
+                      background: '#F8FAFC',
+                      border: '1.5px solid #E2E8F0',
+                      borderRadius: '16px',
+                      padding: '18px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <BookOpen size={16} color="#5448F8" />
+                          <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                            {sub.name}
+                          </h4>
+                        </div>
+                        <span style={{ fontSize: '11.5px', color: '#5448F8', background: '#EEF2FF', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                          {sub.units.length} Units • {sub.flattenedTopics.length} Topics
+                        </span>
+                      </div>
+
+                      {sub.overview && (
+                        <p style={{ fontSize: '13px', color: '#475569', marginBottom: '14px', lineHeight: 1.5 }}>
+                          {sub.overview}
+                        </p>
+                      )}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {sub.units.map((unit, uIdx) => (
+                          <div key={uIdx} style={{
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: '10px',
+                            padding: '12px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                              <Layers size={14} color="#5448F8" />
+                              <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#1E293B' }}>
+                                {unit.name}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {unit.topics.map((t, tIdx) => (
+                                <div key={tIdx} style={{
+                                  background: '#F8FAFC',
+                                  padding: '10px 12px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #F1F5F9',
+                                  fontSize: '12.5px'
+                                }}>
+                                  <div style={{ fontWeight: 600, color: '#1E293B' }}>• {t.name}</div>
+                                  {((t.subtopics && t.subtopics.length > 0) || (t.keyConcepts && t.keyConcepts.length > 0)) && (
+                                    <div style={{ marginTop: '6px', paddingLeft: '10px', borderLeft: '2px solid #E2E8F0' }}>
+                                      {t.subtopics && t.subtopics.length > 0 && (
+                                        <div style={{ marginBottom: t.keyConcepts && t.keyConcepts.length > 0 ? '6px' : 0 }}>
+                                          <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748B', marginBottom: '3px' }}>Subtopics:</div>
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                            {t.subtopics.map((st, i) => (
+                                              <div key={i} style={{ fontSize: '11.5px', color: '#475569', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                                <span style={{ color: '#5448F8', fontSize: '9px' }}>•</span>
+                                                <span>{st}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {t.keyConcepts && t.keyConcepts.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                                          {t.keyConcepts.map((kc, i) => (
+                                            <span key={i} style={{ fontSize: '10.5px', background: '#EEF2FF', color: '#4F46E5', padding: '1px 6px', borderRadius: '4px' }}>
+                                              ⚡ {kc}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Modal Footer */}
+                <div style={{
+                  padding: '16px 24px',
+                  borderTop: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  display: 'flex',
+                  justifyContent: 'flex-end'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setSyllabusPreviewOpen(false)}
+                    className="btn-signin"
+                    style={{ fontSize: '13px', padding: '8px 18px' }}
+                  >
+                    Close Preview
+                  </button>
+                </div>
               </div>
             </div>
           )}

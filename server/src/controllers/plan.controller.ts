@@ -16,6 +16,29 @@ const CreatePlanSchema = z.object({
   preferredStudyEnd: z.string().default('21:00'),
   sessionLength: z.number().min(15).max(180).default(60),
   breakDuration: z.number().min(0).max(60).default(15),
+  syllabus: z.object({
+    fileName: z.string(),
+    uploadedAt: z.union([z.string(), z.date()]).optional(),
+    rawTextLength: z.number().optional(),
+    subjects: z.array(
+      z.object({
+        name: z.string(),
+        overview: z.string().optional(),
+        units: z.array(
+          z.object({
+            name: z.string(),
+            topics: z.array(
+              z.object({
+                name: z.string(),
+                subtopics: z.array(z.string()).optional(),
+                keyConcepts: z.array(z.string()).optional()
+              })
+            )
+          })
+        )
+      })
+    ).optional()
+  }).optional(),
   subjects: z.array(
     z.object({
       name: z.string().min(1, 'Subject name required'),
@@ -25,7 +48,10 @@ const CreatePlanSchema = z.object({
       topics: z.array(
         z.object({
           name: z.string().min(1, 'Topic name required'),
-          status: z.enum(['WEAK', 'AVERAGE', 'STRONG', 'COMPLETED']).optional()
+          status: z.enum(['WEAK', 'AVERAGE', 'STRONG', 'COMPLETED']).optional(),
+          unitName: z.string().optional(),
+          subtopics: z.array(z.string()).optional(),
+          keyConcepts: z.array(z.string()).optional()
         })
       ).min(1, 'At least 1 topic per subject is required')
     })
